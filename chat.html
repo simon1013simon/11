@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+.chat-layout {
+  display: flex;
+  height: calc(100vh - 120px);
+}
+#sidebar {
+  width: 260px;
+  border-right: 1px solid #ddd;
+  padding: 1rem;
+  overflow-y: auto;
+}
+#chat-area {
+  flex: 1;
+  padding: 1rem;
+}
+.chat-box {
+  height: calc(100% - 100px);
+  overflow-y: auto;
+  border: 1px solid #ccc;
+  padding: 1rem;
+  border-radius: .5rem;
+}
+.chat-item { cursor: pointer; }
+.chat-item.active {
+  background: #0d6efd;
+  color: white;
+}
+</style>
+
+<div class="chat-layout">
+
+  <div id="sidebar">
+    <input id="search-input" class="form-control mb-2" placeholder="搜尋使用者…">
+    <ul id="search-results" class="list-group mb-3"></ul>
+
+    <h6>🌐 群聊</h6>
+    <ul class="list-group mb-3">
+      <li class="list-group-item chat-item active" data-room="global">群聊</li>
+    </ul>
+
+    <h6>👤 好友</h6>
+    <ul id="friend-list" class="list-group"></ul>
+  </div>
+
+  <div id="chat-area">
+    <h5 id="room-title">群聊</h5>
+    <div id="chat-box" class="chat-box mb-3"></div>
+
+    <form id="chat-form" class="d-flex">
+      <input id="message" class="form-control me-2" required>
+      <button class="btn btn-primary">送出</button>
+    </form>
+  </div>
+</div>
+
+<!-- 刪除好友 Modal -->
+<div class="modal fade" id="confirmDeleteModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title text-danger">刪除好友</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        確定刪除 <strong id="deleteFriendName"></strong>？
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+        <button class="btn btn-danger" id="confirmDeleteBtn">刪除</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script>
+/* ===== 變數先宣告（關鍵） ===== */
+
+let deleteTargetId = nul
+
+const socket = io();
+const username = "{{ username }}";
+
+const chatBox = document.getElementById('chat-box');
+const friendList = document.getElementById('friend-list');
+const roomTitle = document.getElementById('room-title');
+const searchInput = document.getElementById('search-input');
+const searchResults = document.getElementById('search-results');
+
+const deleteModal = new bootstrap.Modal(
+  document.getElementById('confirmDeleteModal')
+);
+const deleteNameEl = document.getElementById('deleteFriendName');
+const confirmDeleteBtn = document.getElementById('confirmDeleteBtn');
+
+/* ===== 搜尋 ===== */
+searchInput.addEventListener('input', async () => {
+  const q = searchInput.value.trim();
+  searchResults.innerHTML = '';
+  if (!q) return;
+
+  const res = await fetch(`/search_users?q=${encodeURIComponent(q)}`);
+  const users = await res.json();
+
+  users.forEach(u => {
+    const li = document.createElement('li');
+    li.className = 'list-group-item d-flex justify-content-between';
+    li.textContent = u.username;
+
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-sm btn-success';
+    btn.textContent = '邀請';
+    btn.onclick = async () => {
+      await fetch('/send_friend_request', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ friend_id: u.id })
+      });
+      li.remove();
+    };
+
+    li.appendChild(btn);
+    searchResults.appendChild(li);
+  });
+});
+
+/* ===== 好友 ===== */
+async function loadFriends() {
+  const res = await fetch('/friends');
+  const data = await res.json();
+  friendList.innerHTML = '';
+
+  data.forEach(f => {
+    const li = document.createElement('li');
+    li.className = 'list-group-item d-flex justify-content-between chat-item';
+    li.textContent = f.username;
+    li.dataset.room = [username, f.username].sort().join('_');
+
+    const del = document.createElement('button');
+    del.className = 'btn btn-sm btn-outline-danger';
+    del.textContent = '刪除';
+    del.onclick = e => {
+      e.stopPropagation();
+      deleteTargetId = f.id;
+      deleteNameEl.textContent = f.username;
+      deleteModal.show();
+    };
+
+    li.appendChild(del);
+    friendList.appendChild(li);
+  });
+}
+
+confirmDeleteBtn.onclick = async () => {
+  if (!deleteTargetId) return;
+  await fetch('/remove_friend', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ friend_id: deleteTargetId })
+  });
+  deleteTargetId = null;
+  deleteModal.hide();
+};
+
+/* ===== 訊息 ===== */
+function appendMessage(m) {
+  const d = document.createElement('div');
+  d.textContent = `${m.username}: ${m.message}`;
+  chatBox.appendChild(d);
+}
+
+async function loadMessages(room) {
+  const res = await fetch(`/messages/${room}`);
+  const data = await res.json();
+  chatBox.innerHTML = '';
+  data.forEach(appendMessage);
+}
+
+document.addEventListener('click', e => {
+  if (!e.target.classList.contains('chat-item')) return;
+  document.querySelectorAll('.chat-item')
+    .forEach(i => i.classList.remove('active'));
+  e.target.classList.add('active');
+  const room = e.target.dataset.room;
+  roomTitle.textContent = e.target.textContent;
+  loadMessages(room);
+});
+
+document.getElementById('chat-form').onsubmit = e => {
+  e.preventDefault();
+  const msg = message.value.trim();
+  if (!msg) return;
+  socket.emit('send_message', { room: roomTitle.textContent, message: msg });
+  message.value = '';
+};
+
+socket.on('receive_message', data => appendMessage(data));
+socket.on('friends_updated', loadFriends);
+
+loadFriends();
+loadMessages('global');
+</script>
+{% endblock %}

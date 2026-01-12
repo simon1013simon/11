@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block content %}
+
+<button class="btn btn-sm btn-outline-secondary mb-3"
+        onclick="history.back()">
+  ← 返回
+</button>
+
+<h4 class="mb-3">📩 好友邀請</h4>
+
+<ul id="request-list" class="list-group"></ul>
+
+<script>
+async function loadFriendRequests() {
+  const res = await fetch('/friend_requests');
+  const data = await res.json();
+  const list = document.getElementById('request-list');
+  list.innerHTML = '';
+
+  if (data.length === 0) {
+    list.innerHTML =
+      '<li class="list-group-item text-muted">目前沒有好友邀請</li>';
+    return;
+  }
+
+  data.forEach(r => {
+    const li = document.createElement('li');
+    li.className =
+      'list-group-item d-flex justify-content-between align-items-center';
+
+    const passed = r.seconds_passed ?? 0;
+    const remain = Math.max(0, 86400 - passed);
+    const hours = Math.floor(remain / 3600);
+
+    li.innerHTML = `
+      <div>
+        <div>${r.username}</div>
+        <small class="text-muted">剩餘 ${hours} 小時</small>
+      </div>
+      <div>
+        <button class="btn btn-sm btn-success me-1">同意</button>
+        <button class="btn btn-sm btn-outline-secondary">拒絕</button>
+      </div>
+    `;
+
+    const [okBtn, noBtn] = li.querySelectorAll('button');
+
+    okBtn.onclick = async () => {
+      okBtn.disabled = true;
+      noBtn.disabled = true;
+
+      await fetch('/accept_friend_request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: r.request_id })
+      });
+
+      loadFriendRequests();
+      if (window.updateRequestBadge) updateRequestBadge();
+    };
+
+    noBtn.onclick = async () => {
+      okBtn.disabled = true;
+      noBtn.disabled = true;
+
+      await fetch('/reject_friend_request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: r.request_id })
+      });
+
+      loadFriendRequests();
+      if (window.updateRequestBadge) updateRequestBadge();
+    };
+
+    list.appendChild(li);
+  });
+}
+
+/* 初始化 */
+loadFriendRequests();
+if (window.updateRequestBadge) updateRequestBadge();
+</script>
+
+{% endblock %}

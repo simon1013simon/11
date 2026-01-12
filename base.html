@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>{{ title if title else "Chat App" }}</title>
+
+  <link
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
+    rel="stylesheet"
+  >
+
+  <style>
+    body { padding-top: 4rem; }
+  </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-md navbar-dark bg-dark fixed-top">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="{{ url_for('chat') }}">ChatApp</a>
+
+    <div class="collapse navbar-collapse show">
+      <ul class="navbar-nav ms-auto align-items-center">
+        {% if current_user.is_authenticated %}
+          <li class="nav-item me-3 text-light">
+            👤 {{ current_user.username }}
+          </li>
+
+          <li class="nav-item me-3">
+            <a class="nav-link position-relative"
+               href="{{ url_for('friend_requests_page') }}">
+              📩 邀請
+              <span id="request-badge"
+                    class="position-absolute top-0 start-100 translate-middle
+                           badge rounded-pill bg-danger"
+                    style="display:none">0</span>
+            </a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+          </li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</nav>
+
+<div class="container mt-4">
+  {% block content %}{% endblock %}
+</div>
+
+<!-- ✅ Bootstrap JS 一定先載 -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- ✅ 子頁 JS 全部放這裡 -->
+{% block scripts %}{% endblock %}
+
+<script>
+async function updateRequestBadge() {
+  try {
+    const res = await fetch('/friend_request_count');
+    if (!res.ok) return;
+    const data = await res.json();
+    const badge = document.getElementById('request-badge');
+    if (!badge) return;
+
+    if (data.count > 0) {
+      badge.textContent = data.count;
+      badge.style.display = 'inline-block';
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch {}
+}
+
+updateRequestBadge();
+setInterval(updateRequestBadge, 30000);
+</script>
+
+</body>
+</html>
